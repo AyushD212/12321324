@@ -43,24 +43,54 @@ function base64ToArrayBuffer(base64){
 
 // ----------------------- AES encryption -----------------------
 async function generateAESKey(){ return crypto.subtle.generateKey({name:"AES-GCM", length:256}, true, ["encrypt","decrypt"]); }
+
 async function encryptPayload(payload){
-    const key = await generateAESKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encPayload = new TextEncoder().encode(JSON.stringify(payload));
-    const encrypted = await crypto.subtle.encrypt({name:"AES-GCM", iv:iv}, key, encPayload);
-    const rawKey = await crypto.subtle.exportKey("raw", key);
-    return arrayBufferToBase64(encrypted) + '.' + arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(rawKey);
+    // Step 1: Add random padding
+    const padding = Array.from({length:16},()=>Math.floor(Math.random()*256));
+    payload.pad = padding;
+
+    // Step 2: First AES encryption
+    const key1 = await generateAESKey();
+    const iv1 = crypto.getRandomValues(new Uint8Array(12));
+    const data1 = new TextEncoder().encode(JSON.stringify(payload));
+    const enc1 = await crypto.subtle.encrypt({name:"AES-GCM", iv:iv1}, key1, data1);
+    const rawKey1 = await crypto.subtle.exportKey("raw", key1);
+
+    // Step 3: Second AES encryption (encrypt the first encrypted data)
+    const key2 = await generateAESKey();
+    const iv2 = crypto.getRandomValues(new Uint8Array(12));
+    const enc2 = await crypto.subtle.encrypt({name:"AES-GCM", iv:iv2}, key2, enc1);
+    const rawKey2 = await crypto.subtle.exportKey("raw", key2);
+
+    // Step 4: Obfuscate keys & IVs
+    const encoded = [
+        arrayBufferToBase64(enc2),
+        arrayBufferToBase64(iv2),
+        arrayBufferToBase64(rawKey2),
+        arrayBufferToBase64(iv1),
+        arrayBufferToBase64(rawKey1)
+    ].map(s=>btoa(s)).join('.'); // double base64 for extra obfuscation
+
+    return encoded;
 }
 
-// ----------------------- AES decryption (unchanged) -----------------------
+// ----------------------- AES decryption -----------------------
 async function decryptPayload(encStr){
     try{
-        const [encryptedB64, ivB64, keyB64] = encStr.split('.');
-        const encrypted = base64ToArrayBuffer(encryptedB64);
-        const iv = base64ToArrayBuffer(ivB64);
-        const keyRaw = base64ToArrayBuffer(keyB64);
-        const key = await crypto.subtle.importKey("raw", keyRaw, "AES-GCM", true, ["decrypt"]);
-        const decrypted = await crypto.subtle.decrypt({name:"AES-GCM", iv:iv}, key, encrypted);
+        const parts = encStr.split('.').map(s=>atob(s));
+        const [enc2B64, iv2B64, key2B64, iv1B64, key1B64] = parts;
+        const enc2 = base64ToArrayBuffer(enc2B64);
+        const iv2 = base64ToArrayBuffer(iv2B64);
+        const key2Raw = base64ToArrayBuffer(key2B64);
+        const key2 = await crypto.subtle.importKey("raw", key2Raw, "AES-GCM", true, ["decrypt"]);
+
+        const enc1 = await crypto.subtle.decrypt({name:"AES-GCM", iv:iv2}, key2, enc2);
+
+        const iv1 = base64ToArrayBuffer(iv1B64);
+        const key1Raw = base64ToArrayBuffer(key1B64);
+        const key1 = await crypto.subtle.importKey("raw", key1Raw, "AES-GCM", true, ["decrypt"]);
+
+        const decrypted = await crypto.subtle.decrypt({name:"AES-GCM", iv:iv1}, key1, enc1);
         return JSON.parse(new TextDecoder().decode(decrypted));
     } catch(e){ return null; }
 }
@@ -114,7 +144,6 @@ async function generateLink(){
                 document.body.innerHTML = '<h1 style="text-align:center;color:red;margin-top:20%;">Access Denied</h1>';
                 document.body.style.pointerEvents='none';
                 document.body.style.userSelect='none';
-                //window.location.href="https://example.com"; // optional redirect
             }
         } else { devtoolsOpen = false; }
     };
