@@ -3,58 +3,53 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Secure Redirect</title>
-<style>
-html,body {height:100%; margin:0; padding:0; font-family:Arial,sans-serif; background:#f8f9fa; color:#111;}
-#verify-screen {display:flex; align-items:center; justify-content:center; height:100vh; background:#f8f9fa;}
-#verify-box {background:#fff; padding:30px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.1); text-align:center;}
-button {padding:8px 12px; border-radius:6px; border:0; background:#0366d6; color:#fff; cursor:pointer;}
-</style>
-
-<!-- Cloudflare Turnstile -->
+<title>Redirecting...</title>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<style>
+body {display:flex; justify-content:center; align-items:center; height:100vh; font-family:Arial;}
+#verifyBox {text-align:center; background:#fff; padding:30px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.1);}
+</style>
+</head>
+<body>
+<div id="verifyBox">
+<h2>Verify to Continue</h2>
+<div class="cf-turnstile" data-sitekey="0x4AAAAAAB_GRO5x_mAh22NL" data-callback="onVerify"></div>
+<p id="status">Waiting for verification...</p>
+</div>
 
 <script>
-const API_ENDPOINT = 'https://your-main-host.com/api/decrypt'; // replace with your server API
+const SERVER = 'http://localhost:3000'; // replace with your server host
+let tokenParam = new URLSearchParams(window.location.search).get('w');
+let verified = false;
 
-// Disable right-click, F12, Ctrl+Shift+I etc.
-document.addEventListener('contextmenu', e => e.preventDefault());
-document.addEventListener('keydown', e => {
-    if(e.key==='F12' || (e.ctrlKey && e.shiftKey && ['I','C','J'].includes(e.key.toUpperCase()))) e.preventDefault();
-});
-
-window.onTurnstileSuccess = async function(token){
-    const params = new URLSearchParams(location.search);
-    const w = params.get('w');
-    if(!w){ document.body.innerHTML='<p style="text-align:center;color:red;">Missing link parameter.</p>'; return; }
+window.onVerify = async (token) => {
+    verified = true;
+    document.getElementById('status').textContent = 'Verified, redirecting...';
+    
+    if(!tokenParam){
+        document.body.innerHTML = '<p style="color:red;">Missing link parameter.</p>';
+        return;
+    }
 
     try {
-        const resp = await fetch(API_ENDPOINT, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({w, token})
-        });
+        const resp = await fetch(`${SERVER}/api/decrypt?token=${encodeURIComponent(tokenParam)}`);
         const data = await resp.json();
-        if(data.url){
+        if(data.success && data.url){
             window.location.href = data.url;
         } else {
-            document.body.innerHTML='<p style="text-align:center;color:red;">Invalid or expired link.</p>';
+            document.body.innerHTML = '<p style="color:red;">Invalid or expired link.</p>';
         }
     } catch(e){
-        document.body.innerHTML='<p style="text-align:center;color:red;">Error contacting server.</p>';
         console.error(e);
+        document.body.innerHTML = '<p style="color:red;">Server error.</p>';
     }
 };
-</script>
-</head>
 
-<body>
-<div id="verify-screen">
-<div id="verify-box">
-<h2>Verify to Continue</h2>
-<div class="cf-turnstile" data-sitekey="0x4AAAAAAB_GRO5x_mAh22NL" data-callback="onTurnstileSuccess"></div>
-<button id="continueBtn" disabled>Waiting for verification...</button>
-</div>
-</div>
+// Optional: Disable F12 / right click
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => { 
+    if(e.key === "F12" || (e.ctrlKey && e.shiftKey && e.key==="I")) e.preventDefault();
+});
+</script>
 </body>
 </html>
